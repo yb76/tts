@@ -33,6 +33,7 @@
 	#define	db_error(mysql, res)					mysql_error(mysql)
 void * get_thread_dbh();
 void * set_thread_dbh();
+MYSQL * get_new_mysql_dbh();
 #endif
 
 static pthread_mutex_t logMutex;
@@ -251,50 +252,6 @@ static void displayComms(char * header, char * data, int len)
 	free(line);
 }
 
-static int databaseInsert(char * query, char * errorMsg)
-{
-	int result;
-
-	//  Add the object
-	dbStart();
-	if (mysql_real_query(get_thread_dbh(), query, strlen(query)) == 0) // success
-		result = TRUE;
-	else
-	{
-		if (errorMsg) strcpy(errorMsg, db_error(get_thread_dbh(), res));
-		result = FALSE;
-	}
-
-	dbEnd();
-
-	return result;
-}
-
-static long databaseCount(char * query)
-{
-	long count = -1;
-	MYSQL_RES * res;
-
-	dbStart();
-
-	if (mysql_real_query(get_thread_dbh(), query, strlen(query)) == 0) // success
-	{
-		MYSQL_ROW row;
-
-		if (res = mysql_store_result(get_thread_dbh()))
-		{
-			if (row = mysql_fetch_row(res))
-			{
-				if(row[0] && strlen(row[0])) count = atol(row[0]);
-			}
-			mysql_free_result(res);
-		}
-	}
-
-	dbEnd();
-
-	return count;
-}
 
 int getFileData(char **pfileData,char *filename,int *len)
 {
@@ -551,7 +508,7 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 	char identity[500];
 	int update = 0;
 	//MessageMCA mcamsg;
-	MYSQL *dbh = (MYSQL *)get_thread_dbh();
+	//MYSQL *dbh = (MYSQL *)get_thread_dbh();
 	int nextmsg = 0;
 	char tid[30]="";
 	char temp[50]="";
@@ -636,12 +593,13 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 			if (strcmp(u.name, "GPS_REQ") == 0)
 			{
 				char tid[64]="";
-				char gomo_driverid[64]="TA0002";
+				char gomo_driverid[64]="TA0001";
 				char gomo_terminalid[64]="00000001";
 				char step[64]="";
 				char cli_string[10240]="";
 				char ser_string[10240]="";
 				char sqlquery[1024]="";
+				MYSQL *dbh = (MYSQL *) get_new_mysql_dbh();
 				int iret = 0;
 
 				getObjectField(json, 1, tid, NULL, "TID:");
@@ -654,10 +612,13 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 
 				dbStart();
 				#ifdef USE_MYSQL
-				if (mysql_real_query(dbh, sqlquery, strlen(sqlquery)) == 0) // success
+				logNow( "gomo request .2[%s]\n",sqlquery);
+				if (dbh!=NULL && mysql_real_query(dbh, sqlquery, strlen(sqlquery)) == 0) // success
+				//if ( mysql_real_query(dbh, sqlquery, strlen(sqlquery)) == 0) // success
 				{
 					MYSQL_RES * res;
 					MYSQL_ROW row;
+					logNow( "gomo request .3\n");
 					if (res = mysql_store_result(dbh))
 					{
 						if (row = mysql_fetch_row(res))
@@ -670,6 +631,9 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 				}
 				#endif
 				dbEnd();
+				logNow( "gomo request .4\n");
+				if(dbh!=NULL) mysql_close(dbh);
+				logNow( "gomo request .5\n");
 
 				if(strcmp(step,"HB")==0) { /* heart beat*/
 					char availability[64]="";
@@ -679,37 +643,8 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 					char query[300]="";
 					int found = 1;
 
+					logNow( "gomo request .6\n");
 					getObjectField(json, 1, auth, NULL, "AUTH_NO:");
-					if(0 && strlen(auth) && strcmp(auth,gomo_driverid)) { //DELETED NOW
-						char DBError[200];
-						found = 0;
-						sprintf(sqlquery," select ID from driver where driversnumber = '%s' ", auth);
-						dbStart();
-						#ifdef USE_MYSQL
-						if (mysql_real_query(dbh, sqlquery, strlen(sqlquery)) == 0) // success
-						{
-							MYSQL_RES * res;
-							res = mysql_store_result(dbh);
-							mysql_free_result(res);
-							found =1;
-						}
-						#endif
-						dbEnd();
-
-						if(found) {
-							if(strcmp(gomo_driverid,"TA0001")!=0) 
-								sprintf(query, "UPDATE gomo_driverid set driverid='%s' where tid='%s'", auth,tid);
-							else
-								sprintf(query, "insert into gomo_driverid values('%s','%s','%s')", tid,auth,tid);
-							if (databaseInsert(query, DBError))
-								logNow( "GOMO_DRIVERID[%s] **RECORDED**\n", query);
-							else
-							{
-								logNow( "Failed to update 'gomo_driverid' table[%s].  Error: %s\n", query,DBError);
-							}
-							strcpy(gomo_driverid,auth);
-						}
-					}
 					if(found) {
 						char plate_no[30]="";
 						char stmp[50]="";
@@ -721,6 +656,7 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 						if(strlen(plate_no)) sprintf(stmp,"&plate=%s",plate_no); else strcpy(stmp,"");
 						sprintf(cli_string,"driver_id=%s&terminal_id=%s%s&latitude=%s&longitude=%s&availability=%s",
 							gomo_driverid,gomo_terminalid,stmp,lat,lon,availability);
+						logNow( "gomo request .7\n");
 						iret = irisGomo_heartbeat(cli_string,ser_string);
 						if(iret == 200 && ser_string[0] == '{') {
 							//sprintf(cli_string,"{TYPE:DATA,NAME:GPS_RESP,VERSION:1,%s",&ser_string[1]);
@@ -981,11 +917,14 @@ int EchoIncomingPackets(SOCKET sd)
 	serialnumber[0] = '\0';
 
 	logNow("\n%s:: Get thread DBHandler start\n", timeString(temp, sizeof(temp)));
+	/*
 	if( set_thread_dbh() == NULL) {
+		if (request) free(request);
 		logNow("\n%s:: Get DBHandler failed !!\n", timeString(temp, sizeof(temp)));
 		return FALSE;
 	}
 	logNow("\n%s:: Get thread DBHandler ok!\n", timeString(temp, sizeof(temp)));
+	*/
 
 	while(1)
 	{
@@ -994,13 +933,14 @@ int EchoIncomingPackets(SOCKET sd)
 		// Get the length first
 		do
 		{
-			timeout.tv_sec = 30;	// If the connection stays for more than 30 seconds, lose it.
+			timeout.tv_sec = 5;	// If the connection stays for more than 5 seconds, lose it.
 			timeout.tv_usec = 100;
 			setsockopt(sd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
 	
 			nReadBytes = recv(sd, acReadBuffer, lengthBytes, 0);
 			if (nReadBytes == 0)
 			{
+				if (request) free(request);
 				logNow("\n%s:: Connection closed by peer (1).\n", timeString(temp, sizeof(temp)));
 				return TRUE;
 			}
@@ -1015,6 +955,7 @@ int EchoIncomingPackets(SOCKET sd)
 			}
 			else if (nReadBytes == SOCKET_ERROR  || nReadBytes < 0)
 			{
+				if (request) free(request);
 				logNow("\n%s:: Connection closed by peer (socket - %d).\n", timeString(temp, sizeof(temp)), errno);
 				return FALSE;
 			}	
@@ -1044,6 +985,10 @@ int EchoIncomingPackets(SOCKET sd)
 				request = NULL;
 				requestLength = 0;
 
+				/********** finished ***************/
+				return TRUE;
+				/********** finished ***************/
+
 				// Flush the buffer
 				timeout.tv_sec = 0;	// If the connection stays for more than 30 minutes, lose it.
 				timeout.tv_usec = 1;
@@ -1052,7 +997,7 @@ int EchoIncomingPackets(SOCKET sd)
 				break;
 			}
 
-			timeout.tv_sec = 5;
+			timeout.tv_sec = 2;
 			timeout.tv_usec = 100;
 			setsockopt(sd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
 	
@@ -1105,8 +1050,6 @@ DWORD WINAPI EchoHandler(void * threadData_)
 		nRetval = 3;
     	}
 	
-	close_thread_dbh();
-
 	logNow("Shutting connection down...");
     if (ShutdownConnection(sd, result))
 		logNow("Connection is down.\n");
@@ -1168,6 +1111,7 @@ void AcceptConnections(SOCKET ListeningSocket)
 				return;
 			}
 			pthread_attr_destroy(&tattr);
+			pthread_detach(pthread_self());
 
         }
         else

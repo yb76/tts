@@ -39,6 +39,7 @@ static void cleanup(void *data)
 		if(sessData && sessData->dbh) {
 			mysql_close(sessData->dbh);
 		}
+		logNow("pthread cleanup\n");
 		free(data);
 	}
 	pthread_setspecific(threadSpecificKey, NULL);
@@ -171,6 +172,7 @@ int close_thread_dbh()
 	if( sessData && sessData->dbh ) {
 		mysql_close(sessData->dbh);
 		sessData->dbh = NULL;
+		logNow("pthread close thread dbh\n");
 	}
 
 	return(0);
@@ -184,5 +186,7 @@ int set_db_connect_param( char *conn_databaseIPAddress, char *conn_user, char *c
 	password = conn_password; 
 	database= conn_database; 
 	unix_socket= conn_unix_socket;
+	sallocInit();
+
 	return(0);
 }
