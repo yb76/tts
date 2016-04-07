@@ -253,28 +253,6 @@ static void displayComms(char * header, char * data, int len)
 }
 
 
-int getFileData(char **pfileData,char *filename,int *len)
-{
-	FILE *fp = fopen(filename,"rb");
-	int fileLen = 0;
-	int nRead = 0;
-	char *dataBuffer = NULL;
-
-	*len = 0;
-	*pfileData = NULL;
-	
-	if(fp!= NULL ) {
-		fseek (fp , 0 , SEEK_END);
-		fileLen = ftell (fp);
-		rewind (fp);
-		*pfileData = malloc( fileLen + 1 );
-		nRead = fread(*pfileData,1,fileLen,fp);
-		*len = nRead;
-		fclose(fp);
-	}
-	return(*len);
-}
-
 int getObjectField(char * data, int count, char * field, char ** srcPtr, const char * tag)
 {
 	char * ptr;
@@ -560,24 +538,6 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 		// If this is an authorisation, then examine the proof
 		if (strcmp(type, "AUTH") == 0 )
 		{
-			FILE * fp;
-			char temp[300];
-			int position = 0;
-
-			// If there is a specific message to the terminal, add it now
-			sprintf(temp, "%s.dld", serialnumber);
-			if ((fp = fopen(temp, "rb")) != NULL)
-			{
-				char line[300];
-
-				while (fgets(line, 300, fp) != NULL)
-					addObject(&response, line, 1, offset, 0);
-
-				fclose(fp);
-				remove(temp);
-				dldexist = 1;
-			}
-
 			continue;
 		}
 
@@ -606,19 +566,17 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 				getObjectField(json, 1, step, NULL, "STEP:");
 				strcpy(gomo_terminalid,tid);
 
-				logNow( "gomo request .1\n");
 				//sprintf(sqlquery," select driverid, terminalid from gomo_driverid where tid = '%s' ", tid);
 				sprintf(sqlquery," select driversnumber,'%s' from terminal_account ta left join terminal_account_driver tad on  tad.terminalaccountid = ta.id and tad.current = 1 left join driver d on tad.driverid = d.id where ta.tid = '%s' ", tid,tid);
 
 				dbStart();
 				#ifdef USE_MYSQL
-				logNow( "gomo request .2[%s]\n",sqlquery);
+				//logNow( "gomo sql [%s]\n",sqlquery);
 				if (dbh!=NULL && mysql_real_query(dbh, sqlquery, strlen(sqlquery)) == 0) // success
 				//if ( mysql_real_query(dbh, sqlquery, strlen(sqlquery)) == 0) // success
 				{
 					MYSQL_RES * res;
 					MYSQL_ROW row;
-					logNow( "gomo request .3\n");
 					if (res = mysql_store_result(dbh))
 					{
 						if (row = mysql_fetch_row(res))
@@ -631,9 +589,7 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 				}
 				#endif
 				dbEnd();
-				logNow( "gomo request .4\n");
 				if(dbh!=NULL) mysql_close(dbh);
-				logNow( "gomo request .5\n");
 
 				if(strcmp(step,"HB")==0) { /* heart beat*/
 					char availability[64]="";
@@ -643,7 +599,6 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 					char query[300]="";
 					int found = 1;
 
-					logNow( "gomo request .6\n");
 					getObjectField(json, 1, auth, NULL, "AUTH_NO:");
 					if(found) {
 						char plate_no[30]="";
@@ -656,7 +611,6 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 						if(strlen(plate_no)) sprintf(stmp,"&plate=%s",plate_no); else strcpy(stmp,"");
 						sprintf(cli_string,"driver_id=%s&terminal_id=%s%s&latitude=%s&longitude=%s&availability=%s",
 							gomo_driverid,gomo_terminalid,stmp,lat,lon,availability);
-						logNow( "gomo request .7\n");
 						iret = irisGomo_heartbeat(cli_string,ser_string);
 						if(iret == 200 && ser_string[0] == '{') {
 							//sprintf(cli_string,"{TYPE:DATA,NAME:GPS_RESP,VERSION:1,%s",&ser_string[1]);
@@ -780,6 +734,13 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 				}
 
 				if(strlen(ser_string) && ser_string[0] == '{') {
+					char findstr[30] = "{TYPE:DATA,NAME:GPS_RESP,";
+					char *ptr = strstr(ser_string, findstr);
+					if(ptr) {
+						char newJson[10240] ="";
+						sprintf(newJson,"{TYPE:DATA,NAME:GPS_RESP,TID:%s,%s",tid,ptr+strlen(findstr));
+						strcpy(ser_string,newJson);
+					}
 					addObject(&response, ser_string, 1, offset, 0);
 				}
 			}
@@ -915,16 +876,6 @@ int EchoIncomingPackets(SOCKET sd)
 
 	// Initialisation
 	serialnumber[0] = '\0';
-
-	logNow("\n%s:: Get thread DBHandler start\n", timeString(temp, sizeof(temp)));
-	/*
-	if( set_thread_dbh() == NULL) {
-		if (request) free(request);
-		logNow("\n%s:: Get DBHandler failed !!\n", timeString(temp, sizeof(temp)));
-		return FALSE;
-	}
-	logNow("\n%s:: Get thread DBHandler ok!\n", timeString(temp, sizeof(temp)));
-	*/
 
 	while(1)
 	{
