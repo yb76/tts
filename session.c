@@ -65,7 +65,7 @@ static int sallocInit(void)
  * Allocate memory and associate the new block with the 
  * current thread.
  */
-void * salloc(size_t size)
+static void * salloc(size_t size)
 {
 	void * p;
 
@@ -81,7 +81,7 @@ void * salloc(size_t size)
 	return NULL;
 }
 
-void * sgetalloc(void)
+static void * sgetalloc(void)
 {
 	if (0 == sallocInit())
 	{
@@ -113,7 +113,7 @@ static void * srealloc(size_t newsize)
 	return NULL;
 }
 
-void sfree(void ** p)
+static void sfree(void ** p)
 {
 	if (p && *p)
 	{
@@ -144,7 +144,7 @@ MYSQL * get_new_mysql_dbh()
 	return(dbh);
 }
 
-void * set_thread_dbh()
+static void * set_thread_dbh()
 {
 	psSession sessData = NULL;
 	sessData = salloc( sizeof (sSession ));
@@ -155,7 +155,7 @@ void * set_thread_dbh()
 	return(sessData->dbh );
 }
 
-void * get_thread_dbh()
+static void * get_thread_dbh()
 {
 	psSession sessData = pthread_getspecific(threadSpecificKey);
 
@@ -165,7 +165,7 @@ void * get_thread_dbh()
 
 }
 
-int close_thread_dbh()
+static int close_thread_dbh()
 {
 	psSession sessData = pthread_getspecific(threadSpecificKey);
 

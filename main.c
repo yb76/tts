@@ -31,8 +31,8 @@
 #ifdef USE_MYSQL
 	#include <mysql.h>
 	#define	db_error(mysql, res)					mysql_error(mysql)
-void * get_thread_dbh();
-void * set_thread_dbh();
+//void * get_thread_dbh();
+//void * set_thread_dbh();
 MYSQL * get_new_mysql_dbh();
 #endif
 
