@@ -34,8 +34,10 @@
 //void * get_thread_dbh();
 //void * set_thread_dbh();
 MYSQL * get_new_mysql_dbh();
+MYSQL *dbh = NULL;
 #endif
 
+static pthread_mutex_t dbMutex;
 static pthread_mutex_t logMutex;
 static pthread_mutex_t counterMutex;
 static pthread_mutex_t hsmMutex;
@@ -130,13 +132,13 @@ void logEnd(void)
 static void dbStart(void)
 {
 	// Start of log critical section
-	//pthread_mutex_lock(&dbMutex);
+	pthread_mutex_lock(&dbMutex);
 }
 
 static void dbEnd(void)
 {
 	// free log mutex and unlock other threads
-	//pthread_mutex_unlock(&dbMutex);
+	pthread_mutex_unlock(&dbMutex);
 }
 
 static char * timeString(char * string, int len)
@@ -486,7 +488,6 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 	char identity[500];
 	int update = 0;
 	//MessageMCA mcamsg;
-	//MYSQL *dbh = (MYSQL *)get_thread_dbh();
 	int nextmsg = 0;
 	char tid[30]="";
 	char temp[50]="";
@@ -559,7 +560,7 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 				char cli_string[10240]="";
 				char ser_string[10240]="";
 				char sqlquery[1024]="";
-				MYSQL *dbh = (MYSQL *) get_new_mysql_dbh();
+				//MYSQL *dbh = (MYSQL *) get_new_mysql_dbh();
 				int iret = 0;
 
 				getObjectField(json, 1, tid, NULL, "TID:");
@@ -589,7 +590,7 @@ int processRequest(SOCKET sd, unsigned char * request, unsigned int requestLengt
 				}
 				#endif
 				dbEnd();
-				if(dbh!=NULL) mysql_close(dbh);
+				//if(dbh!=NULL) mysql_close(dbh);
 
 				if(strcmp(step,"HB")==0) { /* heart beat*/
 					char availability[64]="";
@@ -1120,7 +1121,7 @@ void signalHandler(int s)
 
 	//mysql_close(mysql);
 
-	//pthread_mutex_destroy(&dbMutex);
+	pthread_mutex_destroy(&dbMutex);
 	pthread_mutex_destroy(&counterMutex);
 	pthread_mutex_destroy(&hsmMutex);
 
@@ -1178,6 +1179,7 @@ int main(int argc, char* argv[])
 	// Initialisation
 	pthread_mutex_init(&hsmMutex, NULL);
 	pthread_mutex_init(&counterMutex, NULL);
+	pthread_mutex_init(&dbMutex, NULL);
 
 	mytime = time(NULL);
 
@@ -1291,7 +1293,7 @@ int main(int argc, char* argv[])
 	}
 
 	{
-			MYSQL *dbh = NULL;
+			//MYSQL *dbh = NULL;
 			// mysql initialisation
 			if ((dbh = mysql_init(NULL)) == NULL)
 			{
@@ -1312,7 +1314,7 @@ int main(int argc, char* argv[])
 			set_db_connect_param( databaseIPAddress, user, password, database, unix_socket);
 
 
-			mysql_close(dbh);
+			//mysql_close(dbh);
 	}
 
 	// Start the log & counter
